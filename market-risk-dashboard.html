@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>市場暴落リスク監視ダッシュボード</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #060a0e;
+  --panel: #0c1118;
+  --panel2: #101820;
+  --border: #1c2a3a;
+  --safe: #00e676;
+  --warn: #ffab00;
+  --danger: #ff1744;
+  --critical: #ff6d00;
+  --text: #c9d1d9;
+  --dim: #4a5568;
+  --accent: #58a6ff;
+  --mono: 'Share Tech Mono', monospace;
+  --sans: 'Noto Sans JP', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  padding: 20px 16px 40px;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(88,166,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(88,166,255,0.025) 1px, transparent 1px);
+  background-size: 44px 44px;
+  pointer-events: none; z-index: 0;
+}
+.container { position: relative; z-index: 1; max-width: 1140px; margin: 0 auto; }
+
+/* HEADER */
+header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+}
+.header-left h1 {
+  font-family: var(--mono); font-size: clamp(14px,2.5vw,21px);
+  color: var(--accent); letter-spacing: 2px; text-transform: uppercase;
+}
+.header-left p { font-size: 11px; color: var(--dim); margin-top: 4px; font-family: var(--mono); }
+.header-right { text-align: right; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+#clock { font-size: 22px; color: var(--text); margin-bottom: 2px; }
+.refresh-btn {
+  background: transparent; border: 1px solid var(--accent); color: var(--accent);
+  font-family: var(--mono); font-size: 12px; padding: 6px 18px; border-radius: 6px;
+  cursor: pointer; letter-spacing: 1px; transition: all 0.2s; margin-top: 8px; display: inline-block;
+}
+.refresh-btn:hover { background: var(--accent); color: var(--bg); }
+.refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* OVERALL SCORE */
+.risk-overview {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px 24px; margin-bottom: 22px;
+  display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
+}
+.risk-score-block { min-width: 120px; }
+.risk-label { font-size: 10px; color: var(--dim); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; font-family: var(--mono); }
+.risk-score-display { font-family: var(--mono); font-size: 68px; font-weight: 700; line-height: 1; transition: color 0.5s; }
+.risk-meter-wrap { flex: 1; min-width: 180px; }
+.risk-bar-bg { height: 14px; background: var(--border); border-radius: 7px; overflow: hidden; margin: 10px 0; }
+.risk-bar-fill { height: 100%; border-radius: 7px; transition: width 1s ease, background 0.5s; }
+.risk-scale { display: flex; justify-content: space-between; font-size: 9px; font-family: var(--mono); color: var(--dim); }
+.risk-verdict { font-size: 13px; font-weight: 700; letter-spacing: 1px; margin-top: 6px; }
+.last-updated { font-size: 10px; color: var(--dim); font-family: var(--mono); margin-top: 6px; }
+
+/* COMPOSITE ALERT LEVELS */
+.composite-section { margin-bottom: 24px; }
+.section-title {
+  font-family: var(--mono); font-size: 10px; color: var(--dim); letter-spacing: 3px;
+  text-transform: uppercase; margin-bottom: 14px; padding-bottom: 7px; border-bottom: 1px solid var(--border);
+}
+.alert-levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 14px; }
+
+.alert-box {
+  border-radius: 10px; border: 1px solid var(--border); padding: 18px;
+  position: relative; overflow: hidden; transition: all 0.5s;
+}
+.alert-box::before {
+  content: ''; position: absolute; top:0; left:0; right:0; height: 4px; border-radius: 10px 10px 0 0;
+}
+.alert-box.inactive { background: var(--panel); opacity: 0.6; }
+.alert-box.inactive::before { background: var(--border); }
+.alert-box.level1-active { background: rgba(255,171,0,0.06); border-color: rgba(255,171,0,0.4); opacity: 1; }
+.alert-box.level1-active::before { background: var(--warn); }
+.alert-box.level2-active { background: rgba(255,23,68,0.07); border-color: rgba(255,23,68,0.45); opacity: 1; }
+.alert-box.level2-active::before { background: var(--danger); }
+.alert-box.level3-active {
+  background: rgba(255,109,0,0.1); border-color: rgba(255,109,0,0.6); opacity: 1;
+  animation: pulse-critical 1.8s ease infinite;
+}
+.alert-box.level3-active::before { background: var(--critical); }
+@keyframes pulse-critical {
+  0%,100% { box-shadow: 0 0 0 0 rgba(255,109,0,0.35); }
+  50%      { box-shadow: 0 0 0 10px rgba(255,109,0,0); }
+}
+
+.alert-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.alert-icon { font-size: 20px; }
+.alert-title { font-family: var(--mono); font-size: 14px; font-weight: 700; }
+.alert-title.t1 { color: var(--warn); }
+.alert-title.t2 { color: var(--danger); }
+.alert-title.t3 { color: var(--critical); }
+.alert-title.t-off { color: var(--dim); }
+.alert-trigger-count { margin-left: auto; font-family: var(--mono); font-size: 18px; font-weight: 700; }
+.alert-trigger-count.t1 { color: var(--warn); }
+.alert-trigger-count.t2 { color: var(--danger); }
+.alert-trigger-count.t3 { color: var(--critical); }
+.alert-trigger-count.t-off { color: var(--dim); }
+.needed-badge { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-bottom: 8px; letter-spacing: 1px; }
+
+.alert-conditions { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.cond-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-family: var(--mono); padding: 5px 8px;
+  border-radius: 5px; background: rgba(255,255,255,0.02); transition: background 0.3s;
+}
+.cond-row.triggered { background: rgba(255,255,255,0.07); }
+.cond-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--dim); transition: all 0.3s; }
+.cond-dot.triggered1 { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.cond-dot.triggered2 { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+.cond-dot.triggered3 { background: var(--critical); box-shadow: 0 0 8px var(--critical); }
+.cond-label { flex: 1; color: var(--dim); }
+.cond-label.triggered { color: var(--text); }
+.cond-val { color: var(--dim); font-size: 10px; white-space: nowrap; }
+.cond-val.triggered { color: var(--accent); }
+
+.alert-action {
+  font-size: 12px; padding: 8px 12px;
+  border-radius: 6px; border-left: 3px solid; line-height: 1.5;
+}
+.alert-action.t1 { color: var(--warn); border-color: var(--warn); background: rgba(255,171,0,0.07); }
+.alert-action.t2 { color: var(--danger); border-color: var(--danger); background: rgba(255,23,68,0.07); }
+.alert-action.t3 { color: var(--critical); border-color: var(--critical); background: rgba(255,109,0,0.1); }
+.alert-action.t-off { color: var(--dim); border-color: var(--border); background: transparent; }
+
+/* INDIVIDUAL CARDS */
+.indicators-section { margin-bottom: 24px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px,1fr)); gap: 14px; }
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px; position: relative; overflow: hidden;
+  transition: border-color 0.4s; animation: fadeIn 0.4s ease both;
+}
+.card::before {
+  content: ''; position: absolute; top:0; left:0; right:0; height: 3px;
+  border-radius: 10px 10px 0 0; transition: background 0.4s;
+}
+.card.safe { border-color: rgba(0,230,118,0.25); }
+.card.safe::before { background: var(--safe); }
+.card.warn { border-color: rgba(255,171,0,0.25); }
+.card.warn::before { background: var(--warn); }
+.card.danger { border-color: rgba(255,23,68,0.25); animation: pulse-danger 2.2s ease infinite; }
+.card.danger::before { background: var(--danger); }
+.card.loading { border-color: var(--border); }
+.card.loading::before { background: var(--dim); }
+@keyframes pulse-danger {
+  0%,100% { box-shadow: 0 0 0 0 rgba(255,23,68,0.2); }
+  50%      { box-shadow: 0 0 0 6px rgba(255,23,68,0); }
+}
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+.card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.card-name { font-size: 12px; font-weight: 700; color: var(--text); }
+.card-ticker { font-family: var(--mono); font-size: 9px; color: var(--dim); margin-top: 2px; }
+.status-badge {
+  font-family: var(--mono); font-size: 9px; padding: 2px 7px; border-radius: 4px;
+  font-weight: 700; letter-spacing: 1px; white-space: nowrap;
+}
+.badge-safe { background: rgba(0,230,118,0.12); color: var(--safe); }
+.badge-warn { background: rgba(255,171,0,0.12); color: var(--warn); }
+.badge-danger { background: rgba(255,23,68,0.12); color: var(--danger); }
+.badge-loading { background: rgba(74,85,104,0.25); color: var(--dim); }
+.card-value { font-family: var(--mono); font-size: 26px; font-weight: 700; line-height: 1; margin-bottom: 4px; transition: color 0.4s; }
+.card-change { font-family: var(--mono); font-size: 11px; margin-bottom: 12px; }
+.card-change.up { color: var(--danger); }
+.card-change.down { color: var(--safe); }
+.threshold-bar { margin-top: 10px; }
+.threshold-label { display: flex; justify-content: space-between; font-size: 9px; color: var(--dim); font-family: var(--mono); margin-bottom: 4px; }
+.bar-bg { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease, background 0.4s; }
+.card-desc { font-size: 10px; color: var(--dim); margin-top: 8px; line-height: 1.5; }
+.card-warn-line { font-size: 9px; color: var(--dim); margin-top: 4px; font-family: var(--mono); }
+
+.spinner {
+  display: inline-block; width: 11px; height: 11px;
+  border: 2px solid rgba(88,166,255,0.25); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 5px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* NOTES */
+.notes {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 18px; margin-bottom: 20px;
+}
+.notes h3 { font-size: 10px; color: var(--dim); font-family: var(--mono); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; }
+.notes ul { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.notes li { font-size: 11px; padding: 7px 10px; background: rgba(88,166,255,0.04); border-left: 2px solid var(--accent); border-radius: 0 4px 4px 0; line-height: 1.6; }
+
+footer { text-align: center; font-size: 10px; color: var(--dim); font-family: var(--mono); padding-top: 14px; border-top: 1px solid var(--border); line-height: 2; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div class="header-left">
+    <h1>⚠ Market Crash Risk Monitor</h1>
+    <p>世界株式暴落リスク・複合条件アラートシステム v2.0</p>
+  </div>
+  <div class="header-right">
+    <div id="clock">--:--:--</div>
+    <div id="date-display"></div>
+    <button class="refresh-btn" id="refresh-btn" onclick="fetchAllData()">↻ データ更新</button>
+  </div>
+</header>
+
+<div class="risk-overview">
+  <div class="risk-score-block">
+    <div class="risk-label">総合リスクスコア</div>
+    <div class="risk-score-display" id="total-score">--</div>
+    <div class="risk-verdict" id="verdict-text">データ取得中...</div>
+    <div class="last-updated" id="last-updated">---</div>
+  </div>
+  <div class="risk-meter-wrap">
+    <div class="risk-label">リスクメーター</div>
+    <div class="risk-bar-bg">
+      <div class="risk-bar-fill" id="risk-bar" style="width:0%"></div>
+    </div>
+    <div class="risk-scale">
+      <span>低リスク 0</span><span>警戒 40</span><span>危険 70</span><span>100</span>
+    </div>
+  </div>
+</div>
+
+<div class="composite-section">
+  <div class="section-title">■ 複合条件アラート — 暴落シグナル判定</div>
+  <div class="alert-levels" id="alert-levels-grid"></div>
+</div>
+
+<div class="indicators-section">
+  <div class="section-title">■ 個別指標モニター（12指標）</div>
+  <div class="grid" id="indicators-grid"></div>
+</div>
+
+<div class="notes">
+  <h3>■ 判定ロジック</h3>
+  <ul>
+    <li>🟢 <strong>安全</strong>：各指標が警戒ラインを下回っている。現時点での暴落リスクは低い。</li>
+    <li>🟡 <strong>Level 1 警戒</strong>：2つ以上のシグナルが点灯。キャッシュ比率の見直しを検討。</li>
+    <li>🔴 <strong>Level 2 危険</strong>：3つ以上のシグナルが点灯。暴落初動の可能性あり。防衛的ポジション推奨。</li>
+    <li>🚨 <strong>Level 3 暴落警報</strong>：複数のシグナルが同時発火。リーマン型の危機的状態。即時リスク回避行動を。</li>
+    <li>📡 データはYahoo Finance APIから取得。30分ごとに自動更新。市場時間外はレート遅延あり。</li>
+  </ul>
+</div>
+
+<footer>
+  ※ このツールは情報提供のみを目的としており、投資アドバイスではありません。<br>
+  投資判断はご自身の責任で行い、必要に応じてファイナンシャルアドバイザーにご相談ください。
+</footer>
+</div>
+
+<script>
+// ================================================================
+// 個別指標定義
+// ================================================================
+const INDICATORS = [
+  { id:'vix',    name:'VIX 恐怖指数',       ticker:'^VIX',      desc:'市場の恐怖感を示す。急騰は大規模な売りを示唆。',                    warnLine:20,  dangerLine:30,   barMax:50,    unit:'',    higherIsBad:true,  warnText:'警戒>20 / 危険>30',                   fmt:v=>v.toFixed(2) },
+  { id:'us10y',  name:'米10年国債利回り',    ticker:'^TNX',      desc:'株のバリュエーションに直接影響。5%超は高圧力。',                    warnLine:4.7, dangerLine:5.0,  barMax:7,     unit:'%',   higherIsBad:true,  warnText:'警戒>4.7% / 危険>5.0%',              fmt:v=>v.toFixed(2) },
+  { id:'sox',    name:'PHLX 半導体 (SOX)',  ticker:'^SOX',      desc:'テクノロジー景気の先行指標。急落は市場全体に波及。',                warnLine:-8,  dangerLine:-15,  barMax:6000,  unit:'',    higherIsBad:false, useChangePct:true, warnText:'1ヶ月: 警戒<-8% / 危険<-15%',        fmt:v=>v.toLocaleString('en-US',{maximumFractionDigits:0}) },
+  { id:'hyg',    name:'HYG ハイイールド債', ticker:'HYG',       desc:'信用リスクの代表指標。急落はクレジット不安のサイン。',              warnLine:-3,  dangerLine:-7,   barMax:90,    unit:'USD', higherIsBad:false, useChangePct:true, warnText:'1ヶ月: 警戒<-3% / 危険<-7%',        fmt:v=>v.toFixed(2) },
+  { id:'kre',    name:'KRE 地銀ETF',        ticker:'KRE',       desc:'米地方銀行の健全性。急落は金融システム不安を示す。',                warnLine:-8,  dangerLine:-18,  barMax:70,    unit:'USD', higherIsBad:false, useChangePct:true, warnText:'1ヶ月: 警戒<-8% / 危険<-18%',       fmt:v=>v.toFixed(2) },
+  { id:'usdjpy', name:'円ドル (USD/JPY)',   ticker:'JPY=X',     desc:'円高急進（数値低下）はリスクオフ・株安の先行シグナル。',            warnLine:145, dangerLine:135,  barMax:165,   unit:'円',  higherIsBad:false, warnText:'円高: 警戒<145 / 危険<135',           fmt:v=>v.toFixed(2) },
+  { id:'sp500',  name:'S&P500',             ticker:'^GSPC',     desc:'米国株の代表指数。月次変化率でリスクを判定。',                      warnLine:-8,  dangerLine:-15,  barMax:6500,  unit:'',    higherIsBad:false, useChangePct:true, warnText:'1ヶ月: 警戒<-8% / 危険<-15%',        fmt:v=>v.toLocaleString('en-US',{maximumFractionDigits:0}) },
+  { id:'nikkei', name:'日経平均',            ticker:'^N225',     desc:'円高連動の急落に注意。外部ショックに敏感。',                        warnLine:-8,  dangerLine:-15,  barMax:45000, unit:'',    higherIsBad:false, useChangePct:true, warnText:'1ヶ月: 警戒<-8% / 危険<-15%',        fmt:v=>v.toLocaleString('ja-JP',{maximumFractionDigits:0}) },
+  { id:'gold',   name:'金 (Gold)',           ticker:'GC=F',      desc:'有事の金。急騰は市場不安の高まりを示す。',                          warnLine:2800,dangerLine:3200, barMax:4000,  unit:'USD', higherIsBad:true,  warnText:'急騰: 警戒>2800 / 危険>3200',         fmt:v=>v.toLocaleString('en-US',{maximumFractionDigits:0}) },
+  { id:'oil',    name:'WTI原油',             ticker:'CL=F',      desc:'地政学リスク指標。急騰はスタグフレーション懸念。',                  warnLine:90,  dangerLine:110,  barMax:150,   unit:'USD', higherIsBad:true,  warnText:'警戒>90$ / 危険>110$',               fmt:v=>v.toFixed(2) },
+  { id:'copper', name:'銅 (Dr. Copper)',    ticker:'HG=F',      desc:'世界景気の先行指標。急落は景気悪化のサイン。',                      warnLine:3.8, dangerLine:3.2,  barMax:6,     unit:'USD', higherIsBad:false, warnText:'急落: 警戒<3.8 / 危険<3.2',           fmt:v=>v.toFixed(3) },
+  { id:'dxy',    name:'ドルインデックス',    ticker:'DX-Y.NYB',  desc:'ドルの強さ。急変動は資本フローの異常を示す。',                      warnLine:108, dangerLine:115,  barMax:130,   unit:'',    higherIsBad:true,  warnText:'警戒>108 / 危険>115',                fmt:v=>v.toFixed(2) },
+];
+
+// ================================================================
+// 複合条件定義
+// ================================================================
+const COMPOSITE_LEVELS = [
+  {
+    id:'level1', level:1, title:'Level 1 — 警戒', icon:'🟡', need:2, titleClass:'t1',
+    action:'⚡ キャッシュ比率の見直しを推奨。リスク資産の一部縮小を検討。',
+    conditions:[
+      { label:'米10年金利 ≥ 4.7%',           id:'us10y',  check:d=>d.price>=4.7,              valFn:d=>d.price?.toFixed(2)+'%' },
+      { label:'VIX 20超',                     id:'vix',    check:d=>d.price>20,                valFn:d=>d.price?.toFixed(2) },
+      { label:'SOX 軟調（1ヶ月 < -5%）',     id:'sox',    check:d=>d.monthChangePct<-5,        valFn:d=>fmt1m(d.monthChangePct) },
+      { label:'HYG 下落（1ヶ月 < -2%）',     id:'hyg',    check:d=>d.monthChangePct<-2,        valFn:d=>fmt1m(d.monthChangePct) },
+    ],
+  },
+  {
+    id:'level2', level:2, title:'Level 2 — 危険', icon:'🔴', need:3, titleClass:'t2',
+    action:'🚨 暴落初動の可能性。防衛的ポジションへの移行を強く推奨。',
+    conditions:[
+      { label:'米10年金利 ≥ 4.9%（5%近い）', id:'us10y',  check:d=>d.price>=4.9,              valFn:d=>d.price?.toFixed(2)+'%' },
+      { label:'VIX 25超',                     id:'vix',    check:d=>d.price>25,                valFn:d=>d.price?.toFixed(2) },
+      { label:'KRE 急落（1ヶ月 < -10%）',    id:'kre',    check:d=>d.monthChangePct<-10,       valFn:d=>fmt1m(d.monthChangePct) },
+      { label:'円高急進（USD/JPY < 142）',    id:'usdjpy', check:d=>d.price<142,               valFn:d=>d.price?.toFixed(2)+'円' },
+      { label:'SOX 暴落（1ヶ月 < -12%）',    id:'sox',    check:d=>d.monthChangePct<-12,       valFn:d=>fmt1m(d.monthChangePct) },
+    ],
+  },
+  {
+    id:'level3', level:3, title:'Level 3 — 暴落警報', icon:'🚨', need:3, titleClass:'t3',
+    action:'☢ リーマン型の危機的状態。即時リスク回避・現金化を検討せよ。',
+    conditions:[
+      { label:'債券安（米10年 ≥ 5.2%）',      id:'us10y',  check:d=>d.price>=5.2,              valFn:d=>d.price?.toFixed(2)+'%' },
+      { label:'株安（S&P500 月次 < -15%）',   id:'sp500',  check:d=>d.monthChangePct<-15,       valFn:d=>fmt1m(d.monthChangePct) },
+      { label:'円高（USD/JPY < 135）',         id:'usdjpy', check:d=>d.price<135,               valFn:d=>d.price?.toFixed(2)+'円' },
+      { label:'VIX 30超',                      id:'vix',    check:d=>d.price>30,                valFn:d=>d.price?.toFixed(2) },
+      { label:'地銀崩壊（KRE 月次 < -20%）',  id:'kre',    check:d=>d.monthChangePct<-20,       valFn:d=>fmt1m(d.monthChangePct) },
+      { label:'HYG 急落（月次 < -8%）',        id:'hyg',    check:d=>d.monthChangePct<-8,        valFn:d=>fmt1m(d.monthChangePct) },
+    ],
+  },
+];
+
+const fmt1m = v => v == null ? '---' : (v>=0?'+':'')+v.toFixed(1)+'%';
+
+// ================================================================
+// データストア
+// ================================================================
+let liveData = {};
+
+// ================================================================
+// Yahoo Finance fetch
+// ================================================================
+async function fetchTicker(ticker) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=2mo`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const json = await res.json();
+    const result = json.chart.result[0];
+    const meta = result.meta;
+    const closes = result.indicators.quote[0].close.filter(v=>v!=null);
+    const price = meta.regularMarketPrice ?? closes.at(-1);
+    const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? closes.at(-2);
+    const change = price - prevClose;
+    const changePct = (change/prevClose)*100;
+    const monthAgo = closes[Math.max(0,closes.length-23)];
+    const monthChangePct = ((price-monthAgo)/monthAgo)*100;
+    return { price, prevClose, change, changePct, monthChangePct, ok:true };
+  } catch(e) {
+    return { ok:false, error:e.message };
+  }
+}
+
+// ================================================================
+// Build composite alert boxes
+// ================================================================
+function buildAlertBoxes() {
+  const grid = document.getElementById('alert-levels-grid');
+  grid.innerHTML = '';
+  COMPOSITE_LEVELS.forEach(lv => {
+    const box = document.createElement('div');
+    box.className = 'alert-box inactive';
+    box.id = `alert-box-${lv.id}`;
+    const condRows = lv.conditions.map((c,i)=>`
+      <div class="cond-row" id="cond-${lv.id}-${i}">
+        <div class="cond-dot" id="dot-${lv.id}-${i}"></div>
+        <span class="cond-label" id="clabel-${lv.id}-${i}">${c.label}</span>
+        <span class="cond-val" id="cval-${lv.id}-${i}">---</span>
+      </div>`).join('');
+    box.innerHTML = `
+      <div class="alert-header">
+        <span class="alert-icon">${lv.icon}</span>
+        <span class="alert-title t-off" id="atitle-${lv.id}">${lv.title}</span>
+        <span class="alert-trigger-count t-off" id="acount-${lv.id}">0/${lv.conditions.length}</span>
+      </div>
+      <div class="needed-badge" id="aneed-${lv.id}">${lv.need}個以上一致で発動</div>
+      <div class="alert-conditions">${condRows}</div>
+      <div class="alert-action t-off" id="aaction-${lv.id}">${lv.action}</div>
+    `;
+    grid.appendChild(box);
+  });
+}
+
+// ================================================================
+// Update composite alerts
+// ================================================================
+function updateAlerts() {
+  let highestLevel = 0;
+  COMPOSITE_LEVELS.forEach(lv => {
+    let triggered = 0;
+    lv.conditions.forEach((c,i) => {
+      const d = liveData[c.id];
+      const dot    = document.getElementById(`dot-${lv.id}-${i}`);
+      const clabel = document.getElementById(`clabel-${lv.id}-${i}`);
+      const cval   = document.getElementById(`cval-${lv.id}-${i}`);
+      const row    = document.getElementById(`cond-${lv.id}-${i}`);
+      if (!d || !d.ok) {
+        dot.className='cond-dot'; clabel.className='cond-label';
+        cval.className='cond-val'; cval.textContent='取得中'; return;
+      }
+      const hit = c.check(d);
+      if (hit) triggered++;
+      dot.className = hit ? `cond-dot triggered${lv.level}` : 'cond-dot';
+      clabel.className = hit ? 'cond-label triggered' : 'cond-label';
+      cval.className = hit ? 'cond-val triggered' : 'cond-val';
+      cval.textContent = c.valFn(d);
+      row.className = hit ? 'cond-row triggered' : 'cond-row';
+    });
+    const active = triggered >= lv.need;
+    const box     = document.getElementById(`alert-box-${lv.id}`);
+    const titleEl = document.getElementById(`atitle-${lv.id}`);
+    const countEl = document.getElementById(`acount-${lv.id}`);
+    const actionEl= document.getElementById(`aaction-${lv.id}`);
+    const needEl  = document.getElementById(`aneed-${lv.id}`);
+    countEl.textContent = `${triggered}/${lv.conditions.length}`;
+    if (active) {
+      box.className = `alert-box level${lv.level}-active`;
+      titleEl.className = `alert-title ${lv.titleClass}`;
+      countEl.className = `alert-trigger-count ${lv.titleClass}`;
+      actionEl.className= `alert-action ${lv.titleClass}`;
+      needEl.style.color= 'var(--text)';
+      highestLevel = Math.max(highestLevel, lv.level);
+    } else {
+      box.className = 'alert-box inactive';
+      titleEl.className = 'alert-title t-off';
+      countEl.className = 'alert-trigger-count t-off';
+      actionEl.className= 'alert-action t-off';
+      needEl.style.color= '';
+    }
+  });
+  return highestLevel;
+}
+
+// ================================================================
+// Build individual cards
+// ================================================================
+function buildCards() {
+  const grid = document.getElementById('indicators-grid');
+  grid.innerHTML = '';
+  INDICATORS.forEach((ind,i) => {
+    const card = document.createElement('div');
+    card.className = 'card loading';
+    card.id = `card-${ind.id}`;
+    card.style.animationDelay = `${i*0.05}s`;
+    card.innerHTML = `
+      <div class="card-header">
+        <div>
+          <div class="card-name">${ind.name}</div>
+          <div class="card-ticker">${ind.ticker}</div>
+        </div>
+        <span class="status-badge badge-loading" id="badge-${ind.id}">取得中</span>
+      </div>
+      <div class="card-value" id="val-${ind.id}"><span class="spinner"></span></div>
+      <div class="card-change" id="chg-${ind.id}">---</div>
+      <div class="threshold-bar">
+        <div class="threshold-label"><span>リスク度</span><span id="pct-${ind.id}">--</span></div>
+        <div class="bar-bg"><div class="bar-fill" id="bar-${ind.id}" style="width:0%;background:var(--dim)"></div></div>
+      </div>
+      <div class="card-desc">${ind.desc}</div>
+      <div class="card-warn-line">⚡ ${ind.warnText}</div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+// ================================================================
+// Update individual card
+// ================================================================
+function updateCard(ind, data) {
+  const card  = document.getElementById(`card-${ind.id}`);
+  const badge = document.getElementById(`badge-${ind.id}`);
+  const valEl = document.getElementById(`val-${ind.id}`);
+  const chgEl = document.getElementById(`chg-${ind.id}`);
+  const barEl = document.getElementById(`bar-${ind.id}`);
+  const pctEl = document.getElementById(`pct-${ind.id}`);
+  if (!data.ok) {
+    card.className='card loading'; badge.className='status-badge badge-loading';
+    badge.textContent='エラー'; valEl.textContent='N/A'; chgEl.textContent=data.error??'取得失敗'; return 0;
+  }
+  const { price, changePct, monthChangePct } = data;
+  let level, riskScore;
+  if (ind.higherIsBad) {
+    if (price>=ind.dangerLine)     { level='danger'; riskScore=100; }
+    else if (price>=ind.warnLine)  { level='warn';   riskScore=40+((price-ind.warnLine)/(ind.dangerLine-ind.warnLine))*30; }
+    else                           { level='safe';   riskScore=(price/ind.warnLine)*40; }
+  } else if (ind.useChangePct) {
+    const v=monthChangePct;
+    if (v<=ind.dangerLine)         { level='danger'; riskScore=100; }
+    else if (v<=ind.warnLine)      { level='warn';   riskScore=40+((ind.warnLine-v)/(ind.warnLine-ind.dangerLine))*30; }
+    else                           { level='safe';   riskScore=Math.max(0,(ind.warnLine-v)/Math.abs(ind.warnLine)*40); }
+  } else {
+    if (price<=ind.dangerLine)     { level='danger'; riskScore=100; }
+    else if (price<=ind.warnLine)  { level='warn';   riskScore=40+((ind.warnLine-price)/(ind.warnLine-ind.dangerLine))*30; }
+    else                           { level='safe';   riskScore=Math.max(0,(ind.warnLine-price)/(ind.barMax-ind.warnLine)*40); }
+  }
+  riskScore = Math.min(100,Math.max(0,riskScore));
+  const color = level==='safe'?'var(--safe)':level==='warn'?'var(--warn)':'var(--danger)';
+  card.className=`card ${level}`;
+  badge.className=`status-badge badge-${level}`;
+  badge.textContent=level==='safe'?'安全':level==='warn'?'警戒':'危険';
+  valEl.style.color=color;
+  valEl.textContent=ind.fmt(price)+(ind.unit?' '+ind.unit:'');
+  const sign=changePct>=0?'+':'';
+  chgEl.className=`card-change ${changePct>=0?'up':'down'}`;
+  let chgText=`前日比: ${sign}${changePct.toFixed(2)}%`;
+  if (ind.useChangePct) chgText+=`  ／  1ヶ月: ${fmt1m(monthChangePct)}`;
+  chgEl.textContent=chgText;
+  barEl.style.width=riskScore+'%';
+  barEl.style.background=color;
+  pctEl.textContent=Math.round(riskScore)+'pt';
+  return riskScore;
+}
+
+// ================================================================
+// Overall risk
+// ================================================================
+function updateOverallRisk(avgScore, highestLevel) {
+  const el=document.getElementById('total-score');
+  const bar=document.getElementById('risk-bar');
+  const verdict=document.getElementById('verdict-text');
+  const s=Math.round(avgScore);
+  el.textContent=s; bar.style.width=s+'%';
+  if (highestLevel>=3||s>=75) {
+    el.style.color='var(--critical)';
+    bar.style.background='linear-gradient(90deg,var(--danger),var(--critical))';
+    verdict.style.color='var(--critical)';
+    verdict.textContent='🚨 Level 3 暴落警報発令中 — 即時リスク回避を検討せよ！';
+  } else if (highestLevel>=2||s>=60) {
+    el.style.color='var(--danger)';
+    bar.style.background='linear-gradient(90deg,var(--warn),var(--danger))';
+    verdict.style.color='var(--danger)';
+    verdict.textContent='🔴 Level 2 危険 — 暴落初動の可能性。防衛的ポジション推奨。';
+  } else if (highestLevel>=1||s>=40) {
+    el.style.color='var(--warn)';
+    bar.style.background='linear-gradient(90deg,var(--safe),var(--warn))';
+    verdict.style.color='var(--warn)';
+    verdict.textContent='🟡 Level 1 警戒 — 複数シグナル点灯。キャッシュ比率を見直せ。';
+  } else {
+    el.style.color='var(--safe)';
+    bar.style.background='linear-gradient(90deg,var(--safe),#69f0ae)';
+    verdict.style.color='var(--safe)';
+    verdict.textContent='🟢 低リスク — 現時点で主要指標は正常範囲内。';
+  }
+}
+
+// ================================================================
+// Main fetch
+// ================================================================
+async function fetchAllData() {
+  const btn=document.getElementById('refresh-btn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>取得中...';
+  buildCards(); buildAlertBoxes();
+  const scores=[];
+  await Promise.all(INDICATORS.map(async ind=>{
+    const data=await fetchTicker(ind.ticker);
+    liveData[ind.id]=data;
+    const score=updateCard(ind,data);
+    scores.push(score);
+  }));
+  const highestLevel=updateAlerts();
+  const avg=scores.length?scores.reduce((a,b)=>a+b,0)/scores.length:0;
+  updateOverallRisk(avg,highestLevel);
+  document.getElementById('last-updated').textContent=`最終更新: ${new Date().toLocaleString('ja-JP')}`;
+  btn.disabled=false; btn.innerHTML='↻ データ更新';
+}
+
+// ================================================================
+// Clock
+// ================================================================
+function tick() {
+  const now=new Date();
+  document.getElementById('clock').textContent=now.toLocaleTimeString('ja-JP');
+  document.getElementById('date-display').textContent=
+    now.toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
+}
+tick(); setInterval(tick,1000);
+buildCards(); buildAlertBoxes();
+fetchAllData();
+setInterval(fetchAllData, 30*60*1000);
+</script>
+</body>
+</html>
